@@ -1,0 +1,4 @@
+pyodbc
+python-dotenv
+salesforce_api
+simple-salesforce
