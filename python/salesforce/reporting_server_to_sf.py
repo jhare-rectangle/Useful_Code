@@ -2,12 +2,13 @@ import math
 import os
 import pprint
 import pyodbc
-from datetime import datetime
 from dotenv import load_dotenv
+from utils import format_sf_timestamp, time_string
 from salesforce_wrapper.salesforce_client import SalesforceClient
 
-done = "bridge_pay_import_2022_05_06_06_00_43"
+done = []
 tables = [
+          "bridge_pay_import_2022_05_06_06_00_43",
           "bridge_pay_import_2022_05_07_06_00_15",
           "bridge_pay_import_2022_05_08_06_00_49",
           "bridge_pay_import_2022_05_09_06_00_20",
@@ -34,8 +35,12 @@ tables = [
           "bridge_pay_import_2022_05_30_06_00_13",
           "bridge_pay_import_2022_05_31_06_00_49",
           "bridge_pay_import_2022_06_01_06_00_27",
-          "bridge_pay_import_2022_06_02_06_01_05"
+          "bridge_pay_import_2022_06_02_06_01_05",
+          "bridge_pay_import_2022_06_03_06_00_45"
 ]
+tables = ["bridge_pay_import_2022_06_02_06_01_05", "bridge_pay_import_2022_06_03_06_00_45"]
+tables = ["bridge_pay_import_2022_06_01_06_00_27"]
+
 rows_per_page = 25
 
 
@@ -51,11 +56,13 @@ def send_data_to_salesforce(data, salesforce_client):
             if row.sMTDMerchantTransaction is not None else "0",
             "sYTDMerchantTransaction": f"{row.sYTDMerchantTransaction}"
             if row.sYTDMerchantTransaction is not None else "0",
-            "sReportDate": f'{datetime.strptime(row.sReportDate, "%Y-%m-%d").strftime("%m/%d/%Y")}'
+            "sReportDate": f'{format_sf_timestamp(row.sReportDate)}'
             if row.sReportDate else ""
         })
     resp = salesforce_client.post_data(body)
     if resp:
+        if not isinstance(resp, dict):
+            raise RuntimeError(f"Unexpected response from Salesforce: {resp}")
         return_tuple = int(resp.get("merchant_data_size", 0)), int(resp.get("updating_account_list_size", 0))
         if return_tuple == (0, 0):
             pprint.pprint(resp)
@@ -63,10 +70,6 @@ def send_data_to_salesforce(data, salesforce_client):
             return return_tuple
     return 0, 0
     # pprint.pprint(resp)
-
-
-def time_string():
-    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 
 if __name__ == "__main__":
@@ -90,6 +93,12 @@ if __name__ == "__main__":
 
     conn = pyodbc.connect(reporting_db_connect)
     cursor = conn.cursor()
+
+    # all_tables_list = [t.name for t in cursor.execute(f"SELECT sobjects.name FROM sysobjects "
+    #                                                   f"sobjects WHERE sobjects.xtype='U'").fetchall()]
+    # all_tables_list.sort()
+    # print(all_tables_list)
+
     skip_tables = list()
     table_count = 0
     print(f"{time_string()}: Start!")
@@ -122,11 +131,14 @@ if __name__ == "__main__":
             #                     " ORDER BY MID DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY"
             for curr_page in range(1, total_pages + 1):
                 rows = cursor.execute(general_query_str, ((curr_page - 1) * rows_per_page, rows_per_page)).fetchall()
-                ds, us = send_data_to_salesforce(rows, sf_client)
-                if ds != us:
-                    print(f"mds {ds} != uals {us} in page {curr_page} (MIDs {[r.sMerchantNumber for r in rows]})")
-                merch_data_count += ds
-                update_count += us
+                try:
+                    ds, us = send_data_to_salesforce(rows, sf_client)
+                    if ds != us:
+                        print(f"mds {ds} != uals {us} in page {curr_page} (MIDs {[r.sMerchantNumber for r in rows]})")
+                    merch_data_count += ds
+                    update_count += us
+                except Exception as e:
+                    print(f"Error on page {curr_page}: {e}")
         elif skip_yes_no.upper() == 'Q':
             skip_tables.extend(tables[t:])
             break
