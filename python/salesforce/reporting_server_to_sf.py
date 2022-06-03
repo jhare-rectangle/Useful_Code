@@ -7,39 +7,8 @@ from utils import format_sf_timestamp, time_string
 from salesforce_wrapper.salesforce_client import SalesforceClient
 
 done = []
-tables = [
-          "bridge_pay_import_2022_05_06_06_00_43",
-          "bridge_pay_import_2022_05_07_06_00_15",
-          "bridge_pay_import_2022_05_08_06_00_49",
-          "bridge_pay_import_2022_05_09_06_00_20",
-          "bridge_pay_import_2022_05_10_06_00_58",
-          "bridge_pay_import_2022_05_11_06_00_33",
-          "bridge_pay_import_2022_05_12_06_00_11",
-          "bridge_pay_import_2022_05_13_06_00_45",
-          "bridge_pay_import_2022_05_14_06_00_22",
-          "bridge_pay_import_2022_05_15_06_00_59",
-          "bridge_pay_import_2022_05_16_06_00_35",
-          "bridge_pay_import_2022_05_17_06_00_13",
-          "bridge_pay_import_2022_05_18_06_00_18",
-          "bridge_pay_import_2022_05_19_06_00_07",
-          "bridge_pay_import_2022_05_20_06_00_44",
-          "bridge_pay_import_2022_05_21_06_00_24",
-          "bridge_pay_import_2022_05_22_06_00_57",
-          "bridge_pay_import_2022_05_23_06_00_39",
-          "bridge_pay_import_2022_05_24_06_00_19",
-          "bridge_pay_import_2022_05_25_06_00_59",
-          "bridge_pay_import_2022_05_26_06_00_34",
-          "bridge_pay_import_2022_05_27_06_00_15",
-          "bridge_pay_import_2022_05_28_06_00_57",
-          "bridge_pay_import_2022_05_29_06_00_34",
-          "bridge_pay_import_2022_05_30_06_00_13",
-          "bridge_pay_import_2022_05_31_06_00_49",
-          "bridge_pay_import_2022_06_01_06_00_27",
-          "bridge_pay_import_2022_06_02_06_01_05",
-          "bridge_pay_import_2022_06_03_06_00_45"
-]
-tables = ["bridge_pay_import_2022_06_02_06_01_05", "bridge_pay_import_2022_06_03_06_00_45"]
 tables = ["bridge_pay_import_2022_06_01_06_00_27"]
+tables = list()
 
 rows_per_page = 25
 
@@ -94,10 +63,17 @@ if __name__ == "__main__":
     conn = pyodbc.connect(reporting_db_connect)
     cursor = conn.cursor()
 
-    # all_tables_list = [t.name for t in cursor.execute(f"SELECT sobjects.name FROM sysobjects "
-    #                                                   f"sobjects WHERE sobjects.xtype='U'").fetchall()]
-    # all_tables_list.sort()
-    # print(all_tables_list)
+    if not tables:
+        all_tables_list = [t.name for t in cursor.execute(f"SELECT sobjects.name FROM sysobjects "
+                                                          f"sobjects WHERE sobjects.xtype='U'").fetchall()]
+        all_tables_list.sort()
+        print('\n'.join(all_tables_list))
+        while not tables:
+            table = input("Type a table name to process: ")
+            if table and table in all_tables_list:
+                tables = [table]
+            else:
+                print("You must enter the name of an existing table!")
 
     skip_tables = list()
     table_count = 0
@@ -105,8 +81,12 @@ if __name__ == "__main__":
     for t, table_name in enumerate(tables):
         merch_data_count = 0
         update_count = 0
-        skip_yes_no = input(f"Process table {table_name}?")
-        print("")
+        if len(tables) == 1:
+            skip_yes_no = 'Y'
+        else:
+            print("Type 'Y' to agree to process the table, 'Q' to quit immediately, anything else to go to next table")
+            skip_yes_no = input(f"Process table {table_name}? ")
+            print("")
         if skip_yes_no.upper() == 'Y':
             table_count += 1
             total_rows = len(cursor.execute(f"SELECT MID FROM BP_DAILY.dbo.{table_name} group by MID").fetchall())

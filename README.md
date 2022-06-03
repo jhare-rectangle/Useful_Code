@@ -9,6 +9,3 @@ Contains python scripts to do cool and/or needful things
 ####_reporting_server_to_sf.py_
 Read a table from the reporting server database and pushes the data to the Salesforce endpoint
 
-*TODO*
-- .env details
-
