@@ -7,8 +7,7 @@ from utils import format_sf_timestamp, time_string
 from salesforce_wrapper.salesforce_client import SalesforceClient
 
 done = []
-tables = ["bridge_pay_import_2022_06_01_06_00_27"]
-tables = list()
+tables = []
 
 rows_per_page = 25
 
