@@ -11,6 +11,13 @@ tables = []
 
 rows_per_page = 25
 
+# XXX Error received when SF endpoint is overwhelmed
+"""
+Unexpected response from Salesforce: Update failed. First exception on row 0 with id 0013n00001uAbFGAA0; first error: CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY, boomtownapp.AccountTrigger: execution of AfterUpdate
+
+caused by: System.AsyncException: Rate Limiting Exception : AsyncApexExecutions Limit exceeded.
+"""
+
 
 def send_data_to_salesforce(data, salesforce_client):
     body = {"merchant_data": list()}
