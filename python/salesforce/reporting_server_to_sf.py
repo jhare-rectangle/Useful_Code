@@ -1,7 +1,7 @@
 import math
 import os
 import pprint
-import pyodbc
+import pymssql
 from dotenv import load_dotenv
 from utils import format_sf_timestamp, time_string
 from salesforce_wrapper.salesforce_client import SalesforceClient
@@ -13,9 +13,15 @@ rows_per_page = 25
 
 # XXX Error received when SF endpoint is overwhelmed
 """
-Unexpected response from Salesforce: Update failed. First exception on row 0 with id 0013n00001uAbFGAA0; first error: CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY, boomtownapp.AccountTrigger: execution of AfterUpdate
+Update failed. First exception on row 0 with id 0013n00001uAbFGAA0; first error: CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY, boomtownapp.AccountTrigger: execution of AfterUpdate caused by: System.AsyncException: Rate Limiting Exception : AsyncApexExecutions Limit exceeded.
+"""
 
-caused by: System.AsyncException: Rate Limiting Exception : AsyncApexExecutions Limit exceeded.
+# New errors
+"""
+Update failed. First exception on row 0 with id 0012S00002GWsZ0QAL; first error: UNABLE_TO_LOCK_ROW, unable to obtain exclusive access to this record or 25 records: 0012S00002GWsZ0QAL,0012S00002GWw1xQAD,0012S00002GWyv7QAD,0012S00002GWsYWQA1,0012S00002GWtORQA1,0012S00002GWxPwQAL,0012S00002GWxmrQAD,0012S00002GWk2oQAD,0012S00002GX1cHQAT,0012S00002GWgnfQAD, ... (15 more): []
+"""
+"""
+Update failed. First exception on row 0 with id 001f400000R8snnAAB; first error: CANNOT_INSERT_UPDATE_ACTIVATE_ENTITY, boomtownapp.AccountTrigger: execution of AfterUpdate caused by: System.QueryException: Record Currently Unavailable: The record you are attempting to edit, or one of its related records, is currently being modified by another user. Please try again.
 """
 
 
@@ -49,13 +55,10 @@ def send_data_to_salesforce(data, salesforce_client):
 
 if __name__ == "__main__":
     load_dotenv()
-    odbc_driver_str = os.getenv("odbc_driver")
     reporting_server = os.getenv("reporting_server")
     reporting_db = os.getenv("reporting_database")
     reporting_db_user = os.getenv("reporting_user")
     reporting_db_pw = os.getenv("reporting_password")
-    reporting_db_connect = f"DRIVER={odbc_driver_str};SERVER={reporting_server};DATABASE={reporting_db};" \
-                           f"UID={reporting_db_user};PWD={reporting_db_pw}"
 
     sf_consumer_key = os.getenv("salesForceConsumerKey")
     sf_consumer_secret = os.getenv("salesForceConsumerSecret")
@@ -66,12 +69,12 @@ if __name__ == "__main__":
 
     sf_client = SalesforceClient(sf_user, sf_password, sf_login_url, sf_consumer_key, sf_consumer_secret, sf_endpoint)
 
-    conn = pyodbc.connect(reporting_db_connect)
-    cursor = conn.cursor()
+    conn = pymssql.connect(reporting_server, reporting_db_user, reporting_db_pw, reporting_db)
+    cursor = conn.cursor(as_dict=True)
 
     if not tables:
-        all_tables_list = [t.name for t in cursor.execute(f"SELECT sobjects.name FROM sysobjects "
-                                                          f"sobjects WHERE sobjects.xtype='U'").fetchall()]
+        cursor.execute("SELECT sobjects.name FROM sysobjects sobjects WHERE sobjects.xtype='U'")
+        all_tables_list = [t["name"] for t in cursor.fetchall()]
         all_tables_list.sort()
         print('\n'.join(all_tables_list))
         while not tables:
@@ -95,7 +98,8 @@ if __name__ == "__main__":
             print("")
         if skip_yes_no.upper() == 'Y':
             table_count += 1
-            total_rows = len(cursor.execute(f"SELECT MID FROM BP_DAILY.dbo.{table_name} group by MID").fetchall())
+            cursor.execute(f"SELECT MID FROM BP_DAILY.dbo.{table_name} group by MID")
+            total_rows = len(cursor.fetchall())
             total_pages = math.ceil(total_rows / rows_per_page)
             print(f"{time_string()}: Initiating data feed into SF to {table_name} with {total_pages} pages and "
                   f"{total_rows} rows")
@@ -105,7 +109,7 @@ if __name__ == "__main__":
                                 "SUM(CAST(YTDTransactionDollarVol as numeric(18,4))) as sYTDMerchantVolume, " \
                                 "SUM(CAST(YTDTransactionCount as numeric(18,4))) as sYTDMerchantTransaction " \
                                 f"FROM BP_DAILY.dbo.{table_name} group by MID,ReportDate ORDER BY MID DESC " \
-                                "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY"
+                                "OFFSET %d ROWS FETCH NEXT %d ROWS ONLY"
             # Nice for getting the merchant name but the query produces slightly different results, so...
             # general_query_str = "SELECT ReportDate as sReportDate, MerchantAccountName as sMerchant, " \
             #                     "MID as sMerchantNumber, " \
@@ -114,9 +118,10 @@ if __name__ == "__main__":
             #                     "SUM(CAST(YTDTransactionDollarVol as numeric(18,4))) as sYTDMerchantVolume, " \
             #                     "SUM(CAST(YTDTransactionCount as numeric(18,4))) as sYTDMerchantTransaction " \
             #                     f"FROM BP_DAILY.dbo.{table_name} group by MID,ReportDate,MerchantAccountName" \
-            #                     " ORDER BY MID DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY"
+            #                     " ORDER BY MID DESC OFFSET %d ROWS FETCH NEXT %d ROWS ONLY"
             for curr_page in range(1, total_pages + 1):
-                rows = cursor.execute(general_query_str, ((curr_page - 1) * rows_per_page, rows_per_page)).fetchall()
+                cursor.execute(general_query_str, ((curr_page - 1) * rows_per_page, rows_per_page))
+                rows = cursor.fetchall()
                 try:
                     ds, us = send_data_to_salesforce(rows, sf_client)
                     if ds != us:

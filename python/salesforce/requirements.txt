@@ -1,4 +1,4 @@
-pyodbc
+pymssql
 python-dotenv
 salesforce_api
 simple-salesforce
