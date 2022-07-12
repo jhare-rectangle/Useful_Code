@@ -29,16 +29,13 @@ def send_data_to_salesforce(data, salesforce_client):
     body = {"merchant_data": list()}
     for row in data:
         body["merchant_data"].append({
-            # "sMerchant": f"{row.sMerchant}" if row.sMerchant is not None else "",
-            "sMerchantNumber": f"{row.sMerchantNumber}" if row.sMerchantNumber is not None else "0",
-            "sMTDMerchantVolume": f"{row.sMTDMerchantVolume}" if row.sMTDMerchantVolume is not None else "0",
-            "sYTDMerchantVolume": f"{row.sYTDMerchantVolume}" if row.sYTDMerchantVolume is not None else "0",
-            "sMTDMerchantTransaction": f"{row.sMTDMerchantTransaction}"
-            if row.sMTDMerchantTransaction is not None else "0",
-            "sYTDMerchantTransaction": f"{row.sYTDMerchantTransaction}"
-            if row.sYTDMerchantTransaction is not None else "0",
-            "sReportDate": f'{format_sf_timestamp(row.sReportDate)}'
-            if row.sReportDate else ""
+            # "sMerchant": f"{row.get('sMerchant', '')}",
+            "sMerchantNumber": f"{row.get('sMerchantNumber', '0')}",
+            "sMTDMerchantVolume": f"{row.get('sMTDMerchantVolume', '0')}",
+            "sYTDMerchantVolume": f"{row.get('sYTDMerchantVolume}', '0')}",
+            "sMTDMerchantTransaction": f"{row.get('sMTDMerchantTransaction', '0')}",
+            "sYTDMerchantTransaction": f"{row.get('sYTDMerchantTransaction', '0')}",
+            "sReportDate": f'{format_sf_timestamp(row["sReportDate"])}' if row.get("sReportDate") else ""
         })
     resp = salesforce_client.post_data(body)
     if resp:
