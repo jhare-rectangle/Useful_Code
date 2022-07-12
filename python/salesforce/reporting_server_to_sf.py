@@ -125,7 +125,8 @@ if __name__ == "__main__":
                 try:
                     ds, us = send_data_to_salesforce(rows, sf_client)
                     if ds != us:
-                        print(f"mds {ds} != uals {us} in page {curr_page} (MIDs {[r.sMerchantNumber for r in rows]})")
+                        print(f"mds {ds} != uals {us} in page {curr_page} "
+                              f"(MIDs {[r['sMerchantNumber'] for r in rows]})")
                     merch_data_count += ds
                     update_count += us
                 except Exception as e:
