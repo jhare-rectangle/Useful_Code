@@ -110,27 +110,28 @@ if __name__ == "__main__":
                                 "SUM(CAST(YTDTransactionCount as numeric(18,4))) as sYTDMerchantTransaction " \
                                 f"FROM BP_DAILY.dbo.{table_name} group by MID,ReportDate ORDER BY MID DESC " \
                                 "OFFSET %d ROWS FETCH NEXT %d ROWS ONLY"
-            # Nice for getting the merchant name but the query produces slightly different results, so...
-            # general_query_str = "SELECT ReportDate as sReportDate, MerchantAccountName as sMerchant, " \
-            #                     "MID as sMerchantNumber, " \
-            #                     "SUM(CAST(MTDTransactionCount as numeric(18,4))) as sMTDMerchantTransaction, " \
-            #                     "SUM(CAST(MTDTransactionDollarVol as numeric(18,4))) as sMTDMerchantVolume, " \
-            #                     "SUM(CAST(YTDTransactionDollarVol as numeric(18,4))) as sYTDMerchantVolume, " \
-            #                     "SUM(CAST(YTDTransactionCount as numeric(18,4))) as sYTDMerchantTransaction " \
-            #                     f"FROM BP_DAILY.dbo.{table_name} group by MID,ReportDate,MerchantAccountName" \
-            #                     " ORDER BY MID DESC OFFSET %d ROWS FETCH NEXT %d ROWS ONLY"
+            # Simplified query that returns the same MIDs but skips everything extraneous in case something is screwing
+            #  up the main query and I want to get some what data is involved in the issue
+            # simple_query_str = "SELECT ReportDate as sReportDate, MID as sMerchantNumber " \
+            #                    f"FROM BP_DAILY.dbo.{table_name} group by MID,ReportDate ORDER BY MID DESC " \
+            #                    "OFFSET %d ROWS FETCH NEXT %d ROWS ONLY"
             for curr_page in range(1, total_pages + 1):
-                cursor.execute(general_query_str, ((curr_page - 1) * rows_per_page, rows_per_page))
-                rows = cursor.fetchall()
                 try:
-                    ds, us = send_data_to_salesforce(rows, sf_client)
-                    if ds != us:
-                        print(f"mds {ds} != uals {us} in page {curr_page} "
-                              f"(MIDs {[r['sMerchantNumber'] for r in rows]})")
-                    merch_data_count += ds
-                    update_count += us
+                    cursor.execute(general_query_str, ((curr_page - 1) * rows_per_page, rows_per_page))
+                    rows = cursor.fetchall()
+                    # print("")
+                    # pprint.pprint(rows)
+                    try:
+                        ds, us = send_data_to_salesforce(rows, sf_client)
+                        if ds != us:
+                            print(f"mds {ds} != uals {us} in page {curr_page} "
+                                  f"(MIDs {[r['sMerchantNumber'] for r in rows]})")
+                        merch_data_count += ds
+                        update_count += us
+                    except Exception as e:
+                        print(f"Salesforce POST failed on page {curr_page}: {e}")
                 except Exception as e:
-                    print(f"Error on page {curr_page}: {e}")
+                    print(f"Reporting server query failed on page {curr_page}: {e}")
         elif skip_yes_no.upper() == 'Q':
             skip_tables.extend(tables[t:])
             break
