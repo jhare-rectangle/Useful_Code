@@ -2,3 +2,4 @@ pymssql
 python-dotenv
 salesforce_api
 simple-salesforce
+slack_sdk

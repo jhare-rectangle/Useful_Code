@@ -5,6 +5,7 @@ import pymssql
 from dotenv import load_dotenv
 from utils import format_sf_timestamp, time_string
 from salesforce_wrapper.salesforce_client import SalesforceClient
+from slack_api.slack_client import SlackClient
 
 done = []
 tables = []
@@ -53,6 +54,41 @@ def send_data_to_salesforce(data, salesforce_client):
     # pprint.pprint(resp)
 
 
+# TODO - Maybe need to try harder to allow error messages to accumulate before final report
+# TODO - Probably need to have all lambdas part of the flow in a single repo to share Slack notification
+# TODO - How do batch POSTing lambdas report their counts of success?  How do retries work in there?  Who makes the
+#         final Slack report?
+def notify_slack(slack_client, table_name, rows_added_to_table, rows_to_be_sent_to_sf, rows_imported_by_sf,
+                 pages_to_read, pages_read):
+    base_fallback = "*Daily BP Transactions Report Ran*<!channel>"
+    errors = list()
+    if pages_read != pages_to_read:
+        errors.append(f"Only retrieved {pages_read} out of {pages_to_read} batches from reporting server database")
+    if rows_imported_by_sf == 0:
+        errors.append("No rows were imported by SF!")
+    elif rows_to_be_sent_to_sf != rows_imported_by_sf:
+        errors.append("Amount of rows sent to SF does not match the request")
+    if errors:
+        if rows_imported_by_sf:
+            icon_name = "warning"
+        else:
+            icon_name = "octagonal_sign"
+        fallback = f"{base_fallback} had errors"
+        status_message = "Import process may have an issue"
+        for err_msg in errors:
+            status_message = f"{status_message} ```{err_msg}```"
+    else:
+        icon_name = "white_check_mark"
+        status_message = "Report ran ```Successfully```"
+        fallback = f"{base_fallback} was successful"
+    details = f"- Table created: `{table_name}`\n- Total rows added to the table: `{rows_added_to_table}`\n" \
+              f"- Rows to be sent to SF: `{rows_to_be_sent_to_sf}`\n" \
+              f"- Rows imported to SF: `{rows_imported_by_sf}`"
+    # print(f"{icon_name} {status_message}")
+    # print(details)
+    slack_client.send_message(fallback, status_message, details, icon_name)
+
+
 if __name__ == "__main__":
     load_dotenv()
     reporting_server = os.getenv("reporting_server")
@@ -71,6 +107,9 @@ if __name__ == "__main__":
 
     conn = pymssql.connect(reporting_server, reporting_db_user, reporting_db_pw, reporting_db)
     cursor = conn.cursor(as_dict=True)
+
+    slack_hook_url = os.getenv("slack_hook_url")
+    slack = SlackClient(slack_hook_url)
 
     if not tables:
         cursor.execute("SELECT sobjects.name FROM sysobjects sobjects WHERE sobjects.xtype='U'")
@@ -98,11 +137,16 @@ if __name__ == "__main__":
             print("")
         if skip_yes_no.upper() == 'Y':
             table_count += 1
+            cursor.execute(f"SELECT MID FROM BP_DAILY.dbo.{table_name}")
+            total_rows_added_to_table = len(cursor.fetchall()) # XXX "Total rows added to the table"
             cursor.execute(f"SELECT MID FROM BP_DAILY.dbo.{table_name} group by MID")
-            total_rows = len(cursor.fetchall())
-            total_pages = math.ceil(total_rows / rows_per_page)
+            total_rows_to_be_sent_to_sf = len(cursor.fetchall())  # XXX "Rows to be sent to SF"
+            rows_imported_to_sf = 0
+            pages_read = 0
+            # XXX "Rows imported to SF" is curr_page * rows_per_page if error occurred, or total_rows_to_be_sent_to_sf
+            total_pages = math.ceil(total_rows_to_be_sent_to_sf / rows_per_page)
             print(f"{time_string()}: Initiating data feed into SF to {table_name} with {total_pages} pages and "
-                  f"{total_rows} rows")
+                  f"{total_rows_to_be_sent_to_sf} rows")
             general_query_str = "SELECT ReportDate as sReportDate, MID as sMerchantNumber, " \
                                 "SUM(CAST(MTDTransactionCount as numeric(18,4))) as sMTDMerchantTransaction, " \
                                 "SUM(CAST(MTDTransactionDollarVol as numeric(18,4))) as sMTDMerchantVolume, " \
@@ -119,10 +163,12 @@ if __name__ == "__main__":
                 try:
                     cursor.execute(general_query_str, ((curr_page - 1) * rows_per_page, rows_per_page))
                     rows = cursor.fetchall()
+                    pages_read += 1
                     # print("")
                     # pprint.pprint(rows)
                     try:
                         ds, us = send_data_to_salesforce(rows, sf_client)
+                        rows_imported_to_sf += ds
                         if ds != us:
                             print(f"mds {ds} != uals {us} in page {curr_page} "
                                   f"(MIDs {[r['sMerchantNumber'] for r in rows]})")
@@ -132,6 +178,8 @@ if __name__ == "__main__":
                         print(f"Salesforce POST failed on page {curr_page}: {e}")
                 except Exception as e:
                     print(f"Reporting server query failed on page {curr_page}: {e}")
+            notify_slack(slack, table_name, total_rows_added_to_table, total_rows_to_be_sent_to_sf,
+                         rows_imported_to_sf, total_pages, pages_read)
         elif skip_yes_no.upper() == 'Q':
             skip_tables.extend(tables[t:])
             break
