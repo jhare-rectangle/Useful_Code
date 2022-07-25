@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from slack_api.slack_client import SlackClient
+from salesforce.interfaces.slack.slack_client import SlackClient
 
 
 if __name__ == "__main__":

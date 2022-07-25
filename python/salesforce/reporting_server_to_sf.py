@@ -4,8 +4,8 @@ import pprint
 import pymssql
 from dotenv import load_dotenv
 from utils import format_sf_timestamp, time_string
-from salesforce_wrapper.salesforce_client import SalesforceClient
-from slack_api.slack_client import SlackClient
+from salesforce.interfaces.salesforce.salesforce_client import SalesforceClient
+from salesforce.interfaces.slack.slack_client import SlackClient
 
 done = []
 tables = []
